@@ -1,0 +1,1214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>3D Tracking · detection overlay</title>
+<meta name="description" content="A motion-tracking overlay — churning detections, node dots and x/y/z callouts over an invisible fragmented body. Rebuilt from the UI8 Forge '3D Tracking' fragment." />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="3D Tracking · detection overlay" />
+<meta property="og:description" content="Churning detections, node dots and coordinate callouts over an invisible fragmented body, in an orbiting 3D scene." />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23000'/><rect x='3' y='5' width='7' height='9' fill='none' stroke='%23ff2416'/><circle cx='6.5' cy='9.5' r='1.4' fill='%23ff2416'/></svg>" />
+<style>
+:root {
+  --ink: #f4f4f4;
+  --ink-dim: #a6a6a6;
+  --ink-faint: #6d6d6d;
+  --rail: rgba(14, 14, 18, 0.94);
+  --line: rgba(244, 244, 244, 0.09);
+  --accent: #ff2416;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: var(--ink);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+  overflow: hidden;
+}
+
+body.light { background: #f4f3ee; }
+
+/* ── the stage ──────────────────────────────────────────────────────── */
+#stage {
+  position: fixed;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
+}
+#stage canvas { position: absolute; inset: 0; display: block; }
+#glow, #halo { pointer-events: none; }
+
+/* ── the top bar ────────────────────────────────────────────────────── */
+#top {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  pointer-events: none;
+  z-index: 6;
+}
+#top .brand { display: flex; align-items: baseline; gap: 8px; pointer-events: auto; }
+#top .name { font-size: 15px; font-weight: 500; }
+#top .sub { font-size: 12px; color: var(--ink-dim); }
+#top .bar { display: flex; gap: 6px; }
+
+#panel-toggle, #fs {
+  pointer-events: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: rgba(14, 14, 18, 0.82);
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+#panel-toggle:hover, #fs:hover { border-color: rgba(244, 244, 244, 0.25); }
+
+#credit {
+  position: fixed;
+  top: 56px;
+  left: 14px;
+  z-index: 6;
+  font-size: 10px;
+  line-height: 1.25;
+  color: rgba(166, 166, 166, 0.7);
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+#credit a {
+  color: rgba(244, 244, 244, 0.6);
+  text-decoration: none;
+  pointer-events: auto;
+  border-bottom: 1px solid rgba(244, 244, 244, 0.18);
+}
+#credit a:hover { color: #fff; border-bottom-color: rgba(255, 255, 255, 0.5); }
+
+/* ── boot cover ────────────────────────────────────────────────────── */
+#boot {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 20;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+#boot.gone { opacity: 0; }
+
+/* ── the control panel ─────────────────────────────────────────────── */
+#panel {
+  position: fixed;
+  top: 52px;
+  right: 0;
+  bottom: 0;
+  width: 330px;
+  max-width: 88vw;
+  background: var(--rail);
+  border-left: 1px solid var(--line);
+  transform: translateX(100%);
+  transition: transform 0.22s ease;
+  display: flex;
+  flex-direction: column;
+  z-index: 7;
+  backdrop-filter: blur(8px);
+}
+body.panel-open #panel { transform: translateX(0); }
+
+#panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+#panel-close {
+  border: 0; background: none; color: var(--ink-dim);
+  font-size: 20px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+#panel-close:hover { color: var(--ink); }
+
+#panel-body { padding: 4px 14px 24px; overflow-y: auto; flex: 1; }
+
+#panel-body h3 {
+  margin: 16px 0 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+#panel-foot { border-top: 1px solid var(--line); padding: 10px 14px 14px; }
+#reset {
+  width: 100%; height: 34px;
+  border-radius: 6px; border: 1px solid var(--line);
+  background: #191921; color: var(--ink);
+  font-size: 12.5px; cursor: pointer;
+}
+#reset:hover { border-color: rgba(244, 244, 244, 0.25); }
+#panel-foot .keys {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+  margin: 10px 0 0;
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint);
+}
+#panel-foot .keys b { color: var(--ink-dim); font-weight: 500; }
+#panel-foot .share { margin: 8px 0 0; font-size: 10.5px; color: var(--ink-faint); }
+
+.row { display: flex; align-items: center; gap: 10px; padding: 5px 0; min-height: 30px; }
+.row .label { flex: 1; font-size: 12.5px; color: var(--ink-dim); line-height: 1.3; }
+
+.row input[type="range"] { flex: 0 0 104px; accent-color: var(--accent); height: 18px; }
+.row .val {
+  flex: 0 0 36px; text-align: right;
+  font-family: var(--mono); font-size: 11.5px; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.row input[type="checkbox"] {
+  appearance: none;
+  width: 34px; height: 20px;
+  border-radius: 999px; border: 1px solid var(--line);
+  background: #25252e; position: relative; cursor: pointer; flex: 0 0 auto;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.row input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #8a8a8a; transition: transform 0.15s ease, background 0.15s ease;
+}
+.row input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+.row input[type="checkbox"]:checked::after { transform: translateX(14px); background: #1a0503; }
+
+.row input[type="color"] {
+  width: 42px; height: 28px; padding: 0;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: #191921; cursor: pointer;
+}
+
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg button {
+  height: 28px; padding: 0 10px;
+  border-radius: 6px; border: 1px solid var(--line);
+  background: #101016; color: var(--ink-dim);
+  font-family: var(--mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer;
+}
+.seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+@media (max-width: 640px) {
+  #top .sub { display: none; }
+  #panel {
+    top: auto; left: 0; right: 0; bottom: 0;
+    width: auto; max-width: none; height: 68vh;
+    border-left: 0; border-top: 1px solid var(--line);
+    border-radius: 14px 14px 0 0;
+    transform: translateY(100%);
+  }
+  body.panel-open #panel { transform: translateY(0); }
+  #credit { top: 54px; left: 12px; }
+}
+
+</style>
+</head>
+<body>
+  <div id="boot"></div>
+
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <canvas id="glow" aria-hidden="true"></canvas>
+    <canvas id="halo" aria-hidden="true"></canvas>
+  </div>
+
+  <header id="top">
+    <div class="brand">
+      <span class="name">3D Tracking</span>
+      <span class="sub">detection overlay</span>
+    </div>
+    <div class="bar">
+      <button id="panel-toggle" type="button" aria-label="Toggle controls">Controls</button>
+      <button id="fs" type="button" aria-label="Toggle fullscreen">Full</button>
+    </div>
+  </header>
+
+  <div id="credit">
+    rebuilt from
+    <a href="https://forge.ui8.ai/share/frag_6d944b64-2a9a-40c8-a0be-2628182fe2cf" target="_blank" rel="noreferrer">UI8&nbsp;Forge · “3D Tracking”</a>
+  </div>
+
+  <aside id="panel" aria-label="Overlay controls">
+    <div id="panel-head">
+      <span>3D Tracking</span>
+      <button id="panel-close" type="button" aria-label="Close controls">×</button>
+    </div>
+    <div id="panel-body"></div>
+    <div id="panel-foot">
+      <button id="reset" type="button">Reset to original look</button>
+      <p class="keys">
+        <span><b>Drag</b> orbit</span><span><b>Scroll</b> zoom</span><span><b>Double-click</b> reset</span>
+        <span><b>F</b> full</span><span><b>R</b> reset</span><span><b>H</b> panel</span>
+      </p>
+      <p class="share">Settings live in the URL — copy it to share this look.</p>
+    </div>
+  </aside>
+
+  <script>
+    window.__errs = []
+    window.addEventListener('error', (e) => window.__errs.push(String(e.message || e.error)))
+    window.addEventListener('unhandledrejection', (e) => window.__errs.push('rejection: ' + String(e.reason)))
+  </script>
+  <script>
+// src/tracking.ts
+function hash(...n) {
+  let h = 2166136261;
+  for (const v of n) {
+    h ^= Math.floor(v * 1000003) | 0;
+    h = Math.imul(h, 16777619);
+    h ^= h >>> 13;
+  }
+  return (h >>> 0) % 1e5 / 1e5;
+}
+function noise(x, seed) {
+  const i = Math.floor(x);
+  const f = x - i;
+  const u = f * f * (3 - 2 * f);
+  const a = hash(i, seed) * 2 - 1;
+  const b = hash(i + 1, seed) * 2 - 1;
+  return a + (b - a) * u;
+}
+var STRANDS = 13;
+var JOINTS = 14;
+var SRC = { x0: 640, y0: 1480, w: 1080, h: 1350 };
+var FOCI = [
+  { x: 0.5, y: 0.6, r: 0.13 },
+  { x: 0.8, y: 0.3, r: 0.06 },
+  { x: 0.24, y: 0.4, r: 0.08 }
+];
+function strand(s, t, w, h, pull) {
+  const f = FOCI[s % 3 === 0 ? 0 : s % 5 === 1 ? 1 : s % 5 === 2 ? 2 : 0];
+  const cx = w * (f.x + 0.05 * noise(t * 0.18 + s * 3.1, 11 + s));
+  const cy = h * (f.y + 0.05 * noise(t * 0.15 + s * 1.7, 29 + s));
+  let bx = cx + w * f.r * noise(t * 0.4 + s * 7.3, 5 + s);
+  let by = cy + h * f.r * noise(t * 0.35 + s * 4.9, 17 + s);
+  if (pull) {
+    const k = 0.35 + 0.25 * hash(s, 3);
+    bx += (pull.x - bx) * k;
+    by += (pull.y - by) * k;
+  }
+  let a = -1.15 + 0.5 * noise(t * 0.5 + s * 2.3, 41 + s) + (hash(s, 9) - 0.5) * 1.2;
+  const seg = Math.min(w, h) * (0.022 + 0.012 * hash(s, 13));
+  const pts = [];
+  let x = bx;
+  let y = by;
+  for (let j = 0;j < JOINTS; j++) {
+    pts.push({ x, y });
+    a += 0.16 * noise(t * 0.9 + j * 0.37 + s * 5.1, 71 + s);
+    x += Math.cos(a) * seg;
+    y += Math.sin(a) * seg;
+  }
+  return pts;
+}
+function piece(s, j, t) {
+  const on = noise(j * 0.55 + t * 1.6 + s * 9.7, 101 + s);
+  const width = 3 + 11 * (0.5 + 0.5 * noise(j * 0.3 + t * 0.7 + s, 131 + s));
+  return { visible: on > -0.15, width };
+}
+function detect(t, frame, n, churn, strands, pointer) {
+  const out = [];
+  const taken = new Set;
+  for (let i = 0;i < n; i++) {
+    const life = (0.35 + 1.6 * hash(i, 1)) * (1.15 - churn);
+    const k = Math.floor((t + hash(i, 2) * life) / life);
+    if (hash(i, k, 3) < 0.08 + churn * 0.2)
+      continue;
+    if (hash(i, frame, 4) < churn * 0.12)
+      continue;
+    const s = Math.floor(hash(i, k, 5) * STRANDS);
+    let j = Math.floor(hash(i, k, 6) * (JOINTS - 2)) + 1;
+    let tries = 0;
+    while (!piece(s, j, t).visible && tries < JOINTS) {
+      j = (j + 1) % (JOINTS - 1);
+      tries++;
+    }
+    if (tries >= JOINTS || taken.has(s * JOINTS + j))
+      continue;
+    taken.add(s * JOINTS + j);
+    const q = strands[s][j];
+    const tall = hash(i, k, 7) < 0.3;
+    const bw = (tall ? 40 : 14) + 50 * hash(i, k, 8) ** 2 + 3 * hash(i, frame, 9);
+    const bh = (tall ? 110 : 18) + 90 * hash(i, k, 10) ** 2 + 3 * hash(i, frame, 11);
+    out.push({ id: i, p: q, bw, bh, s, j });
+  }
+  if (pointer)
+    out.push({ id: n, p: pointer, bw: 34, bh: 34, s: -1, j: -1 });
+  return out;
+}
+function rgba(hex, a) {
+  let h = hex.replace("#", "");
+  if (h.length === 3)
+    h = [...h].map((c) => c + c).join("");
+  const n = parseInt(h, 16);
+  return Number.isNaN(n) ? `rgba(255,255,255,${a})` : `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+}
+function toSrc(p, w, h) {
+  return { x: Math.round(SRC.x0 + p.x / w * SRC.w), y: Math.round(SRC.y0 + p.y / h * SRC.h) };
+}
+function arrow(ctx, x, y, ang, size = 5) {
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - Math.cos(ang - 0.45) * size, y - Math.sin(ang - 0.45) * size);
+  ctx.lineTo(x - Math.cos(ang + 0.45) * size, y - Math.sin(ang + 0.45) * size);
+  ctx.closePath();
+  ctx.fill();
+}
+var RAMP = " .:-=+*#%@";
+var CELL = { w: 6, h: 9 };
+function asciiFill(ctx, bw, bh, node, id, t, alpha, o) {
+  const cols = Math.floor((bw - 2) / CELL.w);
+  const rows = Math.floor((bh - 2) / CELL.h);
+  if (cols < 1 || rows < 1)
+    return;
+  const ox = (bw - cols * CELL.w) / 2 + CELL.w / 2;
+  const oy = (bh - rows * CELL.h) / 2 + CELL.h / 2;
+  ctx.font = `400 8px ${o.mono}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = o.ink;
+  for (let r = 0;r < rows; r++) {
+    for (let c = 0;c < cols; c++) {
+      const px = ox + c * CELL.w;
+      const py = oy + r * CELL.h;
+      const d = Math.hypot((px - node.x) / Math.max(bw, 24), (py - node.y) / Math.max(bh, 24));
+      const n = noise(c * 0.6 + t * 2.4 + id * 13, 500 + r * 3 + id * 31);
+      const v = Math.max(0, Math.min(0.999, 0.75 - d * 1.1 + n * 0.45));
+      const glyph = RAMP[Math.floor(v * RAMP.length)];
+      if (glyph === " ")
+        continue;
+      ctx.globalAlpha = (0.25 + 0.6 * v) * alpha;
+      ctx.fillText(glyph, px, py);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "start";
+}
+function camera(w, h, cam) {
+  const f = Math.max(w, h) * 1.1;
+  const dist = f * cam.zoom;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const rotate = (p) => {
+    const x1 = p.x * cy + p.z * sy;
+    const z1 = -p.x * sy + p.z * cy;
+    return { x: x1, y: p.y * cp - z1 * sp, z: p.y * sp + z1 * cp };
+  };
+  const project = (p) => {
+    const c = rotate(p);
+    const z = Math.max(c.z + dist, 1);
+    const s = f / z;
+    return { x: w / 2 + c.x * s, y: h / 2 + c.y * s, s, z };
+  };
+  const unproject = (sx, sy2) => {
+    const inv = (x, y, z) => {
+      const z1 = -y * sp + z * cp;
+      return { x: x * cy - z1 * sy, y: y * cp + z * sp, z: x * sy + z1 * cy };
+    };
+    const O = inv(0, 0, -dist);
+    const D = inv((sx - w / 2) / f, (sy2 - h / 2) / f, 1);
+    if (Math.abs(D.z) < 0.0001)
+      return null;
+    const k = -O.z / D.z;
+    if (k <= 0)
+      return null;
+    return { x: O.x + D.x * k + w / 2, y: O.y + D.y * k + h / 2 };
+  };
+  return { project, unproject, rotate, dist, f };
+}
+function strandZ(s, j, t, S) {
+  return S * ((hash(s, 51) - 0.5) * 0.6 + (hash(s, 52) - 0.5) * 0.03 * j + 0.05 * noise(t * 0.25 + s * 2.1, 61 + s));
+}
+var fog = (z, dist) => Math.max(0.3, Math.min(1, 1.6 - 0.7 * (z / dist)));
+function draw(ctx, w, h, dpr, t, frame, cam, o) {
+  ctx.fillStyle = o.void;
+  ctx.fillRect(0, 0, w, h);
+  const S = Math.min(w, h);
+  const { project, unproject, rotate, dist, f } = camera(w, h, cam);
+  const world = (p, z) => ({ x: p.x - w / 2, y: p.y - h / 2, z });
+  if (o.stage) {
+    const fy = h * 0.3;
+    const R = Math.max(w, h) * 1.6;
+    const step = Math.max(40, Math.round(S / 12));
+    const K = Math.floor(R / step);
+    const N = 16;
+    const near = 24;
+    const seg = (a, b) => {
+      const ca = rotate(a);
+      const cb = rotate(b);
+      ca.z += dist;
+      cb.z += dist;
+      if (ca.z < near && cb.z < near)
+        return;
+      const clip = (p, q) => {
+        const k = (near - p.z) / (q.z - p.z);
+        return { x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k, z: near };
+      };
+      const pa = ca.z < near ? clip(ca, cb) : ca;
+      const pb = cb.z < near ? clip(cb, ca) : cb;
+      ctx.moveTo(w / 2 + pa.x * f / pa.z, h / 2 + pa.y * f / pa.z);
+      ctx.lineTo(w / 2 + pb.x * f / pb.z, h / 2 + pb.y * f / pb.z);
+    };
+    ctx.lineWidth = 1;
+    for (let k = -K;k <= K; k++) {
+      const u = k * step;
+      for (let i = 0;i < N; i++) {
+        const v0 = -R + 2 * R * i / N;
+        const v1 = v0 + 2 * R / N;
+        const r = Math.hypot(u, (v0 + v1) / 2) / R;
+        if (r >= 1)
+          continue;
+        ctx.strokeStyle = rgba(o.ink, o.gridOpacity * (1 - r) ** 1.6);
+        ctx.beginPath();
+        seg({ x: u, y: fy, z: v0 }, { x: u, y: fy, z: v1 });
+        seg({ x: v0, y: fy, z: u }, { x: v1, y: fy, z: u });
+        ctx.stroke();
+      }
+    }
+  }
+  const pull = o.pointer ? unproject(o.pointer.x, o.pointer.y) : null;
+  const live = Array.from({ length: STRANDS }, (_, s) => strand(s, t, w, h, pull));
+  ctx.fillStyle = o.signal;
+  for (let i = 0;i < 26; i++) {
+    const s = i % STRANDS;
+    const j = Math.floor(hash(i, 21) * JOINTS);
+    const q = live[s][j];
+    const dx = (hash(i, Math.floor(t * 2), 23) - 0.5) * 60;
+    const dy = (hash(i, Math.floor(t * 2), 24) - 0.5) * 60;
+    const dz = (hash(i, Math.floor(t * 2), 25) - 0.5) * 60;
+    const sp = project(world({ x: q.x + dx, y: q.y + dy }, (strandZ(s, j, t, S) + dz) * o.depth));
+    ctx.globalAlpha = 0.55 * fog(sp.z, dist);
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, (1 + 2.2 * hash(i, 22)) * sp.s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const tracks = detect(t, frame, o.tracks, o.churn, live, pull).map((k) => ({
+    ...k,
+    z: k.s < 0 ? 0 : strandZ(k.s, k.j, t, S) * o.depth
+  }));
+  if (o.connectors && tracks.length > 1) {
+    const { bend, spread, weight, opacity, arrows } = o.curve;
+    ctx.lineWidth = weight;
+    for (const A of tracks) {
+      const B = tracks[Math.floor(hash(A.id, 31) * tracks.length)];
+      if (!B || B === A)
+        continue;
+      const a = world(A.p, A.z);
+      const b = world(B.p, B.z);
+      const c = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+      const len = Math.hypot(c.x, c.y, c.z) || 1;
+      const flat = Math.hypot(c.x, c.y) || 1;
+      const n1 = { x: -c.y / flat, y: c.x / flat, z: 0 };
+      const n2 = { x: (c.y * n1.z - c.z * n1.y) / len, y: (c.z * n1.x - c.x * n1.z) / len, z: (c.x * n1.y - c.y * n1.x) / len };
+      const side = 0.5 + (hash(A.id, B.id, 32) - 1) * spread;
+      const bulge = side * 2.4 * bend * Math.max(len, 160);
+      const phi = (hash(A.id, B.id, 34) - 0.5) * 1.6 * spread;
+      const k1 = Math.cos(phi) * bulge;
+      const k2 = Math.sin(phi) * bulge;
+      const m = { x: (a.x + b.x) / 2 + n1.x * k1 + n2.x * k2, y: (a.y + b.y) / 2 + n1.y * k1 + n2.y * k2, z: (a.z + b.z) / 2 + n2.z * k2 };
+      const at = (u) => {
+        const v = 1 - u;
+        return project({
+          x: v * v * a.x + 2 * v * u * m.x + u * u * b.x,
+          y: v * v * a.y + 2 * v * u * m.y + u * u * b.y,
+          z: v * v * a.z + 2 * v * u * m.z + u * u * b.z
+        });
+      };
+      const mid = at(0.5);
+      ctx.strokeStyle = rgba(o.ink, opacity * fog(mid.z, dist));
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      for (let i = 0;i <= 28; i++) {
+        const q = at(i / 28);
+        if (i === 0)
+          ctx.moveTo(q.x, q.y);
+        else
+          ctx.lineTo(q.x, q.y);
+      }
+      ctx.stroke();
+      if (arrows) {
+        const tip = at(0.97);
+        const prev = at(0.93);
+        arrow(ctx, tip.x, tip.y, Math.atan2(tip.y - prev.y, tip.x - prev.x), 4 + weight);
+      }
+    }
+  }
+  const boxes = tracks.map((k) => ({ k, node: project(world(k.p, k.z)) })).sort((A, B) => B.node.z - A.node.z);
+  const placed = [];
+  for (const { k, node } of boxes) {
+    const alpha = fog(node.z, dist);
+    const bw = Math.round(k.bw);
+    const bh = Math.round(k.bh);
+    const bx = Math.round(node.x - k.bw * (0.2 + 0.6 * hash(k.id, 41))) + 0.5;
+    const by = Math.round(node.y - k.bh * (0.1 + 0.5 * hash(k.id, 42))) + 0.5;
+    if (o.ascii) {
+      ctx.setTransform(dpr, 0, 0, dpr, dpr * bx, dpr * by);
+      asciiFill(ctx, bw, bh, { x: node.x - bx, y: node.y - by }, k.id, t, alpha, { ink: o.asciiInk, mono: o.mono });
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = o.signal;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.fillStyle = o.signal;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = o.dim;
+    arrow(ctx, node.x + 7, node.y - 3, -0.6, 4);
+    ctx.globalAlpha = 1;
+    if (!o.labels)
+      continue;
+    ctx.font = o.font;
+    ctx.textBaseline = "alphabetic";
+    const src = toSrc(k.p, w, h);
+    const text = `x: ${src.x}  y: ${src.y}  z: ${Math.round(1000 + k.z / S * 1000)}`;
+    const tw = ctx.measureText(text).width;
+    let lx = Math.max(4, Math.min(w - tw - 4, bx));
+    let ly = Math.max(14, by - 5);
+    for (let guard = 0;guard < 6; guard++) {
+      const hit = placed.find((p) => Math.abs(p.y - ly) < 15 && lx < p.x + p.w + 10 && p.x < lx + tw + 10);
+      if (!hit)
+        break;
+      ly = hit.y - 15;
+    }
+    placed.push({ x: lx, y: ly, w: tw });
+    ctx.fillStyle = o.ink;
+    ctx.globalAlpha = Math.max(0.55, alpha);
+    ctx.fillText(text, lx, ly);
+    ctx.globalAlpha = 1;
+  }
+  if (o.stage) {
+    const gx = 34;
+    const gy = h - 34;
+    ctx.font = `400 9px ${o.mono}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 1;
+    for (const [label, v] of [["x", { x: 1, y: 0, z: 0 }], ["y", { x: 0, y: 1, z: 0 }], ["z", { x: 0, y: 0, z: 1 }]]) {
+      const r = rotate(v);
+      ctx.strokeStyle = o.dim;
+      ctx.fillStyle = o.dim;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx + r.x * 18, gy + r.y * 18);
+      ctx.stroke();
+      ctx.fillText(label, gx + r.x * 26, gy + r.y * 26);
+    }
+    ctx.textAlign = "start";
+  }
+}
+
+// src/story.ts
+var STORY = [
+  {
+    title: null,
+    controls: [
+      {
+        prop: "polarity",
+        control: "segmented",
+        options: [
+          "dark",
+          "light"
+        ]
+      },
+      {
+        prop: "tracks",
+        control: "slider",
+        label: "Detections",
+        min: 4,
+        max: 40,
+        step: 1
+      },
+      {
+        prop: "churn",
+        control: "slider",
+        label: "Churn",
+        min: 0,
+        max: 1,
+        step: 0.05
+      },
+      {
+        prop: "fps",
+        control: "slider",
+        label: "Frame rate",
+        min: 8,
+        max: 30,
+        step: 1
+      },
+      {
+        prop: "labels",
+        control: "switch",
+        label: "x / y / z callouts"
+      },
+      {
+        prop: "ascii",
+        control: "switch",
+        label: "ASCII fill"
+      },
+      {
+        prop: "follow",
+        control: "switch",
+        label: "Follow cursor"
+      }
+    ]
+  },
+  {
+    title: "3D",
+    controls: [
+      {
+        prop: "depth",
+        control: "slider",
+        label: "Depth",
+        min: 0,
+        max: 2,
+        step: 0.05
+      },
+      {
+        prop: "autoRotate",
+        control: "slider",
+        label: "Auto-rotate",
+        min: -0.5,
+        max: 0.5,
+        step: 0.01
+      },
+      {
+        prop: "stage",
+        control: "switch",
+        label: "Floor grid + axes"
+      },
+      {
+        prop: "gridOpacity",
+        control: "slider",
+        label: "Grid opacity",
+        min: 0,
+        max: 0.5,
+        step: 0.01,
+        visibleWhen: {
+          prop: "stage",
+          equals: true
+        }
+      }
+    ]
+  },
+  {
+    title: "Bloom",
+    controls: [
+      {
+        prop: "bloom",
+        control: "slider",
+        label: "Intensity",
+        min: 0,
+        max: 1,
+        step: 0.05
+      },
+      {
+        prop: "bloomRadius",
+        control: "slider",
+        label: "Radius",
+        min: 2,
+        max: 40,
+        step: 1
+      }
+    ]
+  },
+  {
+    title: "Connections",
+    controls: [
+      {
+        prop: "connectors",
+        control: "switch",
+        label: "Show"
+      },
+      {
+        prop: "bend",
+        control: "slider",
+        label: "Bend",
+        min: 0,
+        max: 2,
+        step: 0.05,
+        visibleWhen: {
+          prop: "connectors",
+          equals: true
+        }
+      },
+      {
+        prop: "bendSpread",
+        control: "slider",
+        label: "Bend variation",
+        min: 0,
+        max: 1,
+        step: 0.05,
+        visibleWhen: {
+          prop: "connectors",
+          equals: true
+        }
+      },
+      {
+        prop: "linkWeight",
+        control: "slider",
+        label: "Line weight",
+        min: 0.5,
+        max: 3,
+        step: 0.25,
+        visibleWhen: {
+          prop: "connectors",
+          equals: true
+        }
+      },
+      {
+        prop: "linkOpacity",
+        control: "slider",
+        label: "Opacity",
+        min: 0.1,
+        max: 1,
+        step: 0.05,
+        visibleWhen: {
+          prop: "connectors",
+          equals: true
+        }
+      },
+      {
+        prop: "arrows",
+        control: "switch",
+        label: "Arrowheads",
+        visibleWhen: {
+          prop: "connectors",
+          equals: true
+        }
+      }
+    ]
+  },
+  {
+    title: "Colour",
+    controls: [
+      {
+        prop: "asciiColor",
+        control: "color",
+        label: "ASCII"
+      },
+      {
+        prop: "accent",
+        control: "color",
+        label: "Accent"
+      }
+    ]
+  }
+];
+var PUBLISHED = {
+  polarity: "dark",
+  tracks: 13,
+  churn: 0,
+  fps: 30,
+  connectors: true,
+  bend: 0.15,
+  bendSpread: 1,
+  linkWeight: 1,
+  linkOpacity: 0.4,
+  arrows: true,
+  labels: true,
+  ascii: true,
+  asciiColor: "#ffffff",
+  accent: "#ffffff",
+  follow: false,
+  depth: 2,
+  autoRotate: -0.11,
+  stage: true,
+  gridOpacity: 0.15,
+  bloom: 0.55,
+  bloomRadius: 11
+};
+
+// src/app.ts
+var host = document.getElementById("stage");
+var canvas = document.getElementById("view");
+var glow = document.getElementById("glow");
+var halo = document.getElementById("halo");
+var ctx = canvas.getContext("2d");
+var REDUCED = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+var VIEW = { yaw: -0.42, pitch: 0.24, zoom: 1 };
+var DEFAULTS = {
+  polarity: "dark",
+  tracks: 22,
+  churn: 0.5,
+  fps: 25,
+  labels: true,
+  ascii: true,
+  follow: true,
+  depth: 1,
+  autoRotate: 0.06,
+  stage: true,
+  gridOpacity: 0.08,
+  bloom: 0.6,
+  bloomRadius: 10,
+  connectors: true,
+  bend: 1,
+  bendSpread: 1,
+  linkWeight: 1,
+  linkOpacity: 0.4,
+  arrows: true,
+  asciiColor: "#ffffff",
+  accent: "#ffffff"
+};
+var INITIAL = { ...DEFAULTS, ...PUBLISHED };
+var params = { ...INITIAL };
+var PALETTES = {
+  dark: { void: "#000000", ink: "#ffffff", signal: "#ff2416", bg: "#000000" },
+  light: { void: "#f4f3ee", ink: "#0d0d10", signal: "#ff2416", bg: "#f4f3ee" }
+};
+var orbit = { ...VIEW };
+var pointer = null;
+var size = { w: 0, h: 0, dpr: 1 };
+var t = REDUCED ? 2.4 : 0;
+var last = performance.now();
+var raf = 0;
+var b64encode = (s) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+var b64decode = (s) => decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/"))));
+function snapshot() {
+  const d = {};
+  for (const k of Object.keys(params)) {
+    if (JSON.stringify(params[k]) !== JSON.stringify(INITIAL[k]))
+      d[k] = params[k];
+  }
+  return d;
+}
+var hashTimer = 0;
+function saveHash() {
+  const d = snapshot();
+  window.clearTimeout(hashTimer);
+  hashTimer = window.setTimeout(() => {
+    const h = Object.keys(d).length ? "#p=" + b64encode(JSON.stringify(d)) : "";
+    history.replaceState(null, "", location.pathname + location.search + h);
+  }, 250);
+}
+function loadHash() {
+  const m = location.hash.match(/#p=([A-Za-z0-9_-]+)/);
+  if (!m)
+    return;
+  try {
+    const d = JSON.parse(b64decode(m[1]));
+    for (const k of Object.keys(d))
+      if (k in DEFAULTS)
+        params[k] = d[k];
+  } catch {}
+}
+loadHash();
+function resize() {
+  const r = host.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  size = { w: r.width, h: r.height, dpr };
+  canvas.width = Math.round(r.width * dpr);
+  canvas.height = Math.round(r.height * dpr);
+  canvas.style.width = r.width + "px";
+  canvas.style.height = r.height + "px";
+  drawFrame(t);
+}
+new ResizeObserver(resize).observe(host);
+function drawFrame(now) {
+  const p = PALETTES[String(params.polarity)] || PALETTES.dark;
+  const fps = Math.max(1, Number(params.fps));
+  const snapped = Math.floor(now * fps) / fps;
+  const cam = {
+    yaw: orbit.yaw + snapped * Number(params.autoRotate),
+    pitch: orbit.pitch,
+    zoom: orbit.zoom
+  };
+  const o = {
+    tracks: Math.max(0, Math.min(40, Math.round(Number(params.tracks)))),
+    churn: Math.max(0, Math.min(1, Number(params.churn))),
+    connectors: Boolean(params.connectors),
+    curve: {
+      bend: Math.max(0, Number(params.bend)),
+      spread: Math.max(0, Math.min(1, Number(params.bendSpread))),
+      weight: Math.max(0.25, Number(params.linkWeight)),
+      opacity: Math.max(0, Math.min(1, Number(params.linkOpacity))),
+      arrows: Boolean(params.arrows)
+    },
+    labels: Boolean(params.labels),
+    ascii: Boolean(params.ascii),
+    depth: Math.max(0, Number(params.depth)),
+    stage: Boolean(params.stage),
+    gridOpacity: Math.max(0, Math.min(1, Number(params.gridOpacity))),
+    pointer: params.follow ? pointer : null,
+    ink: String(params.polarity === "light" ? p.ink : params.accent === "#ffffff" ? p.ink : params.accent),
+    asciiInk: String(params.asciiColor || p.ink),
+    void: p.void,
+    signal: p.signal,
+    dim: `rgba(${params.polarity === "light" ? "13,13,16" : "255,255,255"},0.4)`,
+    font: "400 11px Archivo, system-ui, sans-serif",
+    mono: "ui-monospace, Menlo, Consolas, monospace"
+  };
+  ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
+  draw(ctx, size.w, size.h, size.dpr, snapped, Math.floor(now * fps), cam, o);
+  for (const b of [glow, halo]) {
+    if (Number(params.bloom) <= 0) {
+      b.width = 1;
+      b.height = 1;
+      continue;
+    }
+    const bw = Math.max(1, Math.round(size.w / 2));
+    const bh = Math.max(1, Math.round(size.h / 2));
+    if (b.width !== bw || b.height !== bh) {
+      b.width = bw;
+      b.height = bh;
+    }
+    const bc = b.getContext("2d");
+    bc.clearRect(0, 0, bw, bh);
+    bc.drawImage(canvas, 0, 0, bw, bh);
+  }
+}
+function loop(now) {
+  raf = requestAnimationFrame(loop);
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+  last = now;
+  if (!REDUCED)
+    t += dt;
+  drawFrame(t);
+}
+function onDown(e) {
+  if (e.button !== 0)
+    return;
+  e.currentTarget.setPointerCapture(e.pointerId);
+  e.currentTarget.style.cursor = "grabbing";
+  pointer = null;
+  host.dataset.drag = "1";
+  host.dataset.sx = String(e.clientX);
+  host.dataset.sy = String(e.clientY);
+}
+function onMove(e) {
+  const r = host.getBoundingClientRect();
+  if (host.dataset.drag === "1") {
+    const startX = Number(host.dataset.sx);
+    const startY = Number(host.dataset.sy);
+    orbit.yaw -= (e.clientX - startX) * 0.006;
+    orbit.pitch = Math.max(-1.35, Math.min(1.35, orbit.pitch + (e.clientY - startY) * 0.006));
+    host.dataset.sx = String(e.clientX);
+    host.dataset.sy = String(e.clientY);
+    return;
+  }
+  pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function onUp(e) {
+  host.dataset.drag = "";
+  host.style.cursor = "grab";
+  try {
+    host.releasePointerCapture(e.pointerId);
+  } catch {}
+}
+function onLeave() {
+  pointer = null;
+}
+function onWheel(e) {
+  e.preventDefault();
+  orbit.zoom = Math.max(0.45, Math.min(2.5, orbit.zoom * Math.exp(e.deltaY * 0.001)));
+}
+function resetOrbit() {
+  orbit = { ...VIEW };
+}
+var widgets = [];
+function refreshVisibility() {
+  for (const w of widgets)
+    w.row.style.display = w.show() ? "" : "none";
+}
+function apply(next) {
+  Object.assign(params, next);
+  paintBody();
+  drawFrame(t);
+  saveHash();
+  refreshVisibility();
+}
+function paintBody() {
+  const p = PALETTES[String(params.polarity)] || PALETTES.dark;
+  document.body.style.background = p.bg;
+  document.body.classList.toggle("light", params.polarity === "light");
+}
+function buildPanel() {
+  const body = document.getElementById("panel-body");
+  body.innerHTML = "";
+  widgets.length = 0;
+  STORY.forEach((section) => {
+    if (section.title) {
+      const h = document.createElement("h3");
+      h.textContent = section.title;
+      body.appendChild(h);
+    }
+    section.controls.forEach((c) => body.appendChild(buildControl(c)));
+  });
+  refreshVisibility();
+}
+function buildControl(c) {
+  const row = document.createElement("div");
+  row.className = "row";
+  if (c.label) {
+    const label = document.createElement("label");
+    label.className = "label";
+    label.htmlFor = `c-${c.prop}`;
+    label.textContent = c.label;
+    row.appendChild(label);
+  }
+  const show = () => !c.visibleWhen || params[c.visibleWhen.prop] === c.visibleWhen.equals;
+  widgets.push({ row, show });
+  const current = params[c.prop];
+  if (c.control === "switch") {
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.id = `c-${c.prop}`;
+    input.checked = Boolean(current);
+    input.addEventListener("change", () => apply({ [c.prop]: input.checked }));
+    row.appendChild(input);
+  } else if (c.control === "slider") {
+    const val = document.createElement("span");
+    val.className = "val";
+    const input = document.createElement("input");
+    input.type = "range";
+    input.id = `c-${c.prop}`;
+    input.min = String(c.min);
+    input.max = String(c.max);
+    input.step = String(c.step);
+    input.value = String(current);
+    val.textContent = String(current);
+    input.addEventListener("input", () => {
+      val.textContent = input.value;
+      apply({ [c.prop]: Number(input.value) });
+    });
+    row.appendChild(input);
+    row.appendChild(val);
+  } else if (c.control === "segmented") {
+    const group = document.createElement("div");
+    group.className = "seg";
+    c.options.forEach((opt) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = opt;
+      b.className = opt === current ? "on" : "";
+      b.addEventListener("click", () => {
+        group.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+        b.classList.add("on");
+        apply({ [c.prop]: opt });
+      });
+      group.appendChild(b);
+    });
+    row.appendChild(group);
+  } else if (c.control === "color") {
+    const input = document.createElement("input");
+    input.type = "color";
+    input.id = `c-${c.prop}`;
+    input.value = String(current);
+    input.addEventListener("input", () => apply({ [c.prop]: input.value }));
+    row.appendChild(input);
+  }
+  return row;
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement)
+    document.exitFullscreen?.();
+  else
+    document.documentElement.requestFullscreen?.();
+}
+function paintFullscreen() {
+  const b = document.getElementById("fs");
+  if (b)
+    b.textContent = document.fullscreenElement ? "Exit" : "Full";
+}
+function resetLook() {
+  Object.assign(params, INITIAL);
+  orbit = { ...VIEW };
+  t = REDUCED ? 2.4 : 0;
+  buildPanel();
+  paintBody();
+  drawFrame(t);
+  saveHash();
+}
+window.addEventListener("keydown", (e) => {
+  const el = e.target;
+  if (el && (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) || el.isContentEditable))
+    return;
+  if (e.metaKey || e.ctrlKey || e.altKey)
+    return;
+  if (e.code === "KeyF") {
+    e.preventDefault();
+    toggleFullscreen();
+  } else if (e.code === "KeyR") {
+    e.preventDefault();
+    resetLook();
+  } else if (e.code === "KeyH") {
+    e.preventDefault();
+    document.body.classList.toggle("panel-open");
+  }
+});
+function start() {
+  buildPanel();
+  paintBody();
+  resize();
+  host.addEventListener("pointerdown", onDown);
+  host.addEventListener("pointermove", onMove);
+  host.addEventListener("pointerup", onUp);
+  host.addEventListener("pointercancel", onUp);
+  host.addEventListener("pointerleave", onLeave);
+  host.addEventListener("wheel", onWheel, { passive: false });
+  host.addEventListener("dblclick", resetOrbit);
+  const toggle = document.getElementById("panel-toggle");
+  toggle.addEventListener("click", () => document.body.classList.toggle("panel-open"));
+  const close = document.getElementById("panel-close");
+  close.addEventListener("click", () => document.body.classList.remove("panel-open"));
+  const resetBtn = document.getElementById("reset");
+  resetBtn.addEventListener("click", resetLook);
+  const fs = document.getElementById("fs");
+  fs.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", paintFullscreen);
+  paintFullscreen();
+  if (!REDUCED)
+    raf = requestAnimationFrame(loop);
+  else {
+    drawFrame(t);
+    document.getElementById("boot")?.classList.add("gone");
+  }
+  if (!REDUCED) {
+    const boot = () => document.getElementById("boot")?.classList.add("gone");
+    requestAnimationFrame(() => requestAnimationFrame(boot));
+  }
+}
+start();
+window.__track = {
+  get t() {
+    return t;
+  },
+  get size() {
+    return size;
+  },
+  get params() {
+    return params;
+  },
+  stats() {
+    const c = canvas;
+    const d = c.getContext("2d").getImageData(0, 0, Math.min(c.width, 80), Math.min(c.height, 80)).data;
+    const seen = new Set;
+    for (let i = 0;i < d.length; i += 4)
+      seen.add(d[i] << 16 | d[i + 1] << 8 | d[i + 2]);
+    return { w: c.width, h: c.height, unique: seen.size };
+  }
+};
+
+</script>
+</body>
+</html>

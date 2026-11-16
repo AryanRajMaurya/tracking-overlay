@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>3D Tracking · detection overlay</title>
+<meta name="description" content="A motion-tracking overlay — churning detections, node dots and x/y/z callouts over an invisible fragmented body. Rebuilt from the UI8 Forge '3D Tracking' fragment." />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="3D Tracking · detection overlay" />
+<meta property="og:description" content="Churning detections, node dots and coordinate callouts over an invisible fragmented body, in an orbiting 3D scene." />
+<meta property="og:image" content="./og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23000'/><rect x='3' y='5' width='7' height='9' fill='none' stroke='%23ff2416'/><circle cx='6.5' cy='9.5' r='1.4' fill='%23ff2416'/></svg>" />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="boot"></div>
+
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <canvas id="glow" aria-hidden="true"></canvas>
+    <canvas id="halo" aria-hidden="true"></canvas>
+  </div>
+
+  <header id="top">
+    <div class="brand">
+      <span class="name">3D Tracking</span>
+      <span class="sub">detection overlay</span>
+    </div>
+    <div class="bar">
+      <button id="panel-toggle" type="button" aria-label="Toggle controls">Controls</button>
+      <button id="fs" type="button" aria-label="Toggle fullscreen">Full</button>
+    </div>
+  </header>
+
+  <div id="credit">
+    rebuilt from
+    <a href="https://forge.ui8.ai/share/frag_6d944b64-2a9a-40c8-a0be-2628182fe2cf" target="_blank" rel="noreferrer">UI8&nbsp;Forge · “3D Tracking”</a>
+  </div>
+
+  <aside id="panel" aria-label="Overlay controls">
+    <div id="panel-head">
+      <span>3D Tracking</span>
+      <button id="panel-close" type="button" aria-label="Close controls">×</button>
+    </div>
+    <div id="panel-body"></div>
+    <div id="panel-foot">
+      <button id="reset" type="button">Reset to original look</button>
+      <p class="keys">
+        <span><b>Drag</b> orbit</span><span><b>Scroll</b> zoom</span><span><b>Double-click</b> reset</span>
+        <span><b>F</b> full</span><span><b>R</b> reset</span><span><b>H</b> panel</span>
+      </p>
+      <p class="share">Settings live in the URL — copy it to share this look.</p>
+    </div>
+  </aside>
+
+  <script>
+    window.__errs = []
+    window.addEventListener('error', (e) => window.__errs.push(String(e.message || e.error)))
+    window.addEventListener('unhandledrejection', (e) => window.__errs.push('rejection: ' + String(e.reason)))
+  </script>
+  <script src="./app.js"></script>
+</body>
+</html>
